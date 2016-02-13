@@ -1,6 +1,9 @@
 <?php
+
 namespace Gpws\Interfaces;
 
-interface WebsocketUser {
-	public function getConnection();
+interface Client {
+//	public function getConnection() : resource;
+
+	public function queueMessage(\Gpws\Interfaces\OutboundMessage $message) : int;
 }

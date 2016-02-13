@@ -2,10 +2,10 @@
 
 namespace Gpws\Interfaces;
 
-interface Router
-{
-	public function sendMessage(\Gpws\Interfaces\Message $message);
-	public function recieveMessage(\Gpws\Interfaces\IncomingMessage $message);
-	public function registerEventHandler($event, callable $handler);
-	public function callEvent($event, $args); // Should this be public?
+interface Server {
+	public function bind(string $ip, int $port);
+
+	public function registerApp(string $path, \Gpws\Interfaces\Application $app);
+
+	public function run();
 }

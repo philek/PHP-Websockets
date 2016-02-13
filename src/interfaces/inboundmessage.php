@@ -2,7 +2,7 @@
 
 namespace Gpws\Interfaces;
 
-interface IncomingMessage {
-	public function getSender();
-	public function getMessage();
+interface InboundMessage {
+	public function getSender() : Client;
+	public function getContent() : string;
 }

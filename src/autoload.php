@@ -10,24 +10,16 @@ namespace Gpws\Core;
  *
  * On systems where the file name is case sensitive, 
  */
-class Autoload
-{
-    static public function load($class)
-    {
-        $classParts = explode('\\', $class);
-        $rootNamespace = array_shift($classParts);
-        if (strtolower($rootNamespace) == 'gpws')
-        {
-            foreach ($classParts as &$part)
-            {
-                $part = strtolower($part);
-            }
+class Autoload {
+	static public function load($class) {
+printf('Load class: %s%s', $class, PHP_EOL);
 
-            /** @var string $path */
-            $path = implode('/', $classParts) . '.php';
-            include_once('core/' . $path);
-        }
-    }
+		if (substr($class, 0, 5) !== 'Gpws\\') return false;
+
+		$path = strtolower(str_replace(array('Gpws\\', '\\'), array(__DIR__ . '/', '/'), $class)) . '.php';
+
+		include $path;
+	}
 }
 
 spl_autoload_register(__NAMESPACE__ . '\\Autoload::load');

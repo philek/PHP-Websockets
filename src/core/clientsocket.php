@@ -2,17 +2,21 @@
 
 namespace Gpws\Core;
 
+define('MAX_HANDSHAKE_SIZE', 8 * 1024);
 define('MAX_BUFFER_SIZE', 64 * 1024);
+define('MAGIC_GUID', "258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
 
 class ClientSocket extends \Gpws\Core\Socket {
 	private $_open = true;
+
+	private $_handshakeComplete = false;
 
 	private $_read_buffer = '';
 	private $_write_buffer = '';
 
 	public function read() {
 		$buffer = '';
-		$numBytes = socket_recv($this->_socket, $buffer, MAX_BUFFER_SIZE - strlen($this->_read_buffer), 0); 
+		$numBytes = socket_recv($this->_socket, $buffer, MAX_BUFFER_SIZE - strlen($this->_read_buffer), 0);
 		if ($numBytes === false) {
 			trigger_error('Socket error: ' . socket_strerror(socket_last_error($this->_socket)));
 			return;
@@ -31,6 +35,8 @@ class ClientSocket extends \Gpws\Core\Socket {
 	}
 
 	private function parseBuffer() {
+		printf("Current read buffer: %s%s", $this->_read_buffer, PHP_EOL);
+
 		if ($this->_handshakeComplete) {
 			$this->parseFrame();
 		} else {
@@ -38,23 +44,186 @@ class ClientSocket extends \Gpws\Core\Socket {
 		}
 	}
 
+	private $_read_buffer_header = NULL;
 	private function parseFrame() {
+		while ($this->_read_buffer) {
+			if (!$this->_read_buffer_header) {
+				$frameHeader = $this->extractHeader($this->_read_buffer);
+				if (!$frameHeader) {
+					printf('Not enough for header.%s', PHP_EOL);
+					return;
+				}
+			} else {
+				$frameHeader = $this->_read_buffer_header;
+			}
 
+			echo ("msglen : ".$frameHeader['length']." offset : ".$frameHeader['offset']." = framesize of ".($frameHeader['offset']+$frameHeader['length']) . PHP_EOL);
+
+			if ($frameHeader['offset'] + $frameHeader['length'] > strlen($this->_read_buffer)) {
+				$this->_read_buffer_header = $frameHeader;
+				printf('Frame not finished yet.');
+				return;
+			}
+
+			$frame = substr($this->_read_buffer, $frameHeader['offset'], $frameHeader['length']);
+
+			$message = $this->deFrame($frame, $frameHeader);
+			if ($message) {
+				call_user_func($this->onRead, $message);
+			}
+
+			$this->_read_buffer = substr($this->_read_buffer, $frameHeader['offset'] + $frameHeader['length']);
+			$this->_read_buffer_header = '';
+		}
 	}
+
+	private $_partialMessage = '';
+
+	protected function deframe($payload, $headers) {
+		$pongReply = false;
+		$willClose = false;
+
+		switch ($headers['opcode']) {
+			case 0:
+				printf("chrome fragmenting payload over 128K.%s", PHP_EOL);
+			case 1:
+			case 2:
+				break;
+			case 8:
+				// todo: close the connection
+				$user->hasSentClose = true;
+				return "";
+
+			case 9:
+				$pongReply = true;
+			case 10:
+// A Pong frame MAY be sent unsolicited. This serves as a unidirectional heartbeat. A response to an unsolicited Pong frame is not expected.
+// IE 11 default behavior send PONG ~30sec between them. Just ignore them.
+				return false;  
+
+			default:
+				//$this->disconnect($user); // todo: fail connection
+				$willClose = true;
+				break;
+		}
+
+		if ($this->checkRSVBits($headers)) {
+			return false;
+		}
+
+		if ($willClose) {
+			// todo: fail the connection
+			return false;
+		}
+ 
+		if ($pongReply) {
+			$reply = $this->frame($payload, $user, 'pong');
+			$this->send($user, $reply);
+
+			return false;
+		}
+
+		//add unmask payload to partialMessage who handle continuous message allready unmasked
+		$payload = $this->_partialMessage . $this->applyMask($headers, $payload);
+
+		if ($headers['fin']) {
+			$this->_partialMessage = '';
+
+			return $payload;
+		}
+
+printf('Partial message'.PHP_EOL);
+
+		$this->_partialMessage = $payload;
+
+		return false;
+	}
+
+
+	protected function extractHeader($message) {
+		if (strlen($message) < 2) return false;
+
+		$header = array(
+			'fin'       => ord($message[0])>>7 & 1,
+			'rsv1'      => ord($message[0])>>6 & 1,
+			'rsv2'      => ord($message[0])>>5 & 1,
+			'rsv3'      => ord($message[0])>>4 & 1,
+			'opcode'    => ord($message[0] & chr(15)),
+			'hasmask'   => ord($message[1])>>7 & 1,
+			'length'    => 0,
+			'indexMask' => 2,
+			'offset'    => 0,
+			'mask'      => ""
+		);
+
+		$header['length'] = ord($message[1] & chr(127)) ;
+	
+		if ($header['length'] == 126) {
+			if (strlen($message) < 4) return false;
+
+			$header['indexMask'] = 4;
+			$header['length'] =  (ord($message[2])<<8) | (ord($message[3])) ;
+		} else if ($header['length'] == 127) {
+			if (strlen($message) < 10) return false;
+
+			$header['indexMask'] = 10;
+			$header['length'] = (ord($message[2]) << 56 ) | ( ord($message[3]) << 48 ) | ( ord($message[4]) << 40 ) | (ord($message[5]) << 32 ) | ( ord($message[6]) << 24 ) | ( ord($message[7]) << 16 ) | (ord($message[8]) << 8  ) | ( ord($message[9]));
+		} 
+
+		$header['offset'] = $header['indexMask'];
+		if ($header['hasmask']) {
+			if (strlen($message) < $header['indexMask'] + 4) return false;
+
+			$header['mask'] = $message[$header['indexMask']] . $message[$header['indexMask']+1] . $message[$header['indexMask']+2] . $message[$header['indexMask']+3];
+			$header['offset'] += 4;
+		}
+
+		return $header;
+	}
+
+	protected function applyMask($headers, $payload) {
+		$effectiveMask = "";
+		if ($headers['hasmask']) {
+			$mask = $headers['mask'];
+		} else {
+			return $payload;
+		}
+
+		$effectiveMask = str_repeat($mask, ($headers['length'] / 4) + 1);
+		$over = $headers['length'] - strlen($effectiveMask);
+		$effectiveMask = substr($effectiveMask, 0, $over);
+		
+		return $effectiveMask ^ $payload;
+	}
+
+// override this method if you are using an extension where the RSV bits are used.
+	protected function checkRSVBits($headers) {
+		if ($headers['rsv1'] + $headers['rsv2'] + $headers['rsv3'] > 0) {
+// $this->disconnect($user); // todo: fail connection
+			return true;
+		}
+
+		return false;
+	}
+
 
 	private function parseHandshake() {
 		if (strpos($this->_read_buffer, "\r\n\r\n") === FALSE) {
-			if (strlen($this->_read_buffer >= MAX_HANDSHAKE_SIZE) {
-				$handshakeResponse = "HTTP/1.1 413 Request Entity Too Large"; 
-				$this->ws_write($user,$handshakeResponse);
-				$this->disconnect($user);
+			if (strlen($this->_read_buffer >= MAX_HANDSHAKE_SIZE)) {
+				$this->send("HTTP/1.1 413 Request Entity Too Large" . "\r\n\r\n");
+
+				$this->disconnect();
 			}
+
 			return;
 		}
 
-		$magicGUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+// TODO only use the part up to \r\n\r\n... Or check that nothing after that?
+
 		$headers = array();
-		$lines = explode("\r\n",$buffer);
+		$lines = explode("\r\n", $this->_read_buffer);
+		$this->_read_buffer = '';
+
 		//protocol and extensions can be sent on multiple line.
 		//$headers['sec-websocket-protocol']='';
 		//$headers['sec-websocket-extensions']='';
@@ -73,72 +242,80 @@ class ClientSocket extends \Gpws\Core\Socket {
 						break;
 				}
 			} else if (stripos($line,"get ") !== false) {
-				preg_match("/GET (.*) HTTP/i", $buffer, $reqResource);
-				$headers['get'] = trim($reqResource[1]);
+				if (preg_match("/GET (.*) HTTP/i", $line, $reqResource)) {
+					$headers['get'] = trim($reqResource[1]);
+				} else {
+					$handshakeResponse = "HTTP/1.1 400 Bad Request";
+				}
 			}
 		}
 
-		if (isset($headers['get'])) {
-			$user->requestedResource = $headers['get'];
-		} else {
-			// todo: fail the connection
-			$handshakeResponse = "HTTP/1.1 405 Method Not Allowed\r\n\r\n";     
-		}
-
-		if (!isset($headers['host']) || !$this->checkHost($headers['host'])) {
-			$handshakeResponse = "HTTP/1.1 400 Bad Request";
-		}
-		if (!isset($headers['upgrade']) || strtolower($headers['upgrade']) != 'websocket') {
-			$handshakeResponse = "HTTP/1.1 400 Bad Request";
-		} 
-		if (!isset($headers['connection']) || strpos(strtolower($headers['connection']), 'upgrade') === FALSE) {
-			$handshakeResponse = "HTTP/1.1 400 Bad Request";
-		}
-		if (!isset($headers['sec-websocket-key'])) {
-			$handshakeResponse = "HTTP/1.1 400 Bad Request";
-		} 
-		if (!isset($headers['sec-websocket-version']) || strtolower($headers['sec-websocket-version']) != 13) {
-			$handshakeResponse = "HTTP/1.1 426 Upgrade Required\r\nSec-WebSocketVersion: 13";
-		}
-		if (($this->headerOriginRequired && !isset($headers['origin']) ) || ($this->headerOriginRequired && !$this->checkOrigin($headers['origin']))) {
-			$handshakeResponse = "HTTP/1.1 403 Forbidden";
-		}
-		
-		// Protocol work on message level. So you can enforce it
-		$protocol = $this->checkProtocol(explode(', ',$headers['sec-websocket-protocol']));
-		if (($this->headerProtocolRequired && !isset($headers['sec-websocket-protocol'])) || ($this->headerProtocolRequired && !$protocol)) {
-			$handshakeResponse = "HTTP/1.1 400 Bad Request";
-		} else if ($protocol){
-			$user->headers["protocol"] = $protocol;
-			$subProtocol = "Sec-WebSocket-Protocol: ".$protocol."\r\n";
-		}
-		
-		// Done verifying the _required_ headers and optionally required headers.
-
 		if (isset($handshakeResponse)) {
-			$this->ws_write($user,$handshakeResponse);
-			$this->disconnect($user);
+			$this->send($handshakeResponse . "\r\n\r\n");
+
+			$this->disconnect();
 
 			return;
 		}
 
-		// Keeping only relevant token that can be of use after handshake
-		// protocol get host extensions
-		$user->headers["get"] = $headers["get"];
-		$user->headers["host"] = $headers["host"];
+		do {
+			if (!isset($headers['get'])) {
+				$handshakeResponse = "HTTP/1.1 405 Method Not Allowed";
+				break;
+			}
+
+			if (!isset($headers['host'])) {
+				$handshakeResponse = "HTTP/1.1 400 Bad Request";
+				break;
+			}
+			if (!isset($headers['upgrade']) || strtolower($headers['upgrade']) != 'websocket') {
+				$handshakeResponse = "HTTP/1.1 400 Bad Request";
+				break;
+			}
+			if (!isset($headers['connection']) || strpos(strtolower($headers['connection']), 'upgrade') === FALSE) {
+				$handshakeResponse = "HTTP/1.1 400 Bad Request";
+				break;
+			}
+			if (!isset($headers['sec-websocket-key'])) {
+				$handshakeResponse = "HTTP/1.1 400 Bad Request";
+				break;
+			}
+			if (!isset($headers['sec-websocket-version']) || strtolower($headers['sec-websocket-version']) != 13) {
+				$handshakeResponse = "HTTP/1.1 426 Upgrade Required\r\nSec-WebSocketVersion: 13";
+				break;
+			}
+		} while (false);
+
+		if (isset($handshakeResponse)) {
+			$this->send($handshakeResponse . "\r\n\r\n");
+
+			$this->disconnect();
+
+			return;
+		}
+
 
 		// Not all browser support same extensions.
 		// extensions work on frame level
+/*
 		$extensionslist = $this->checkExtensions(explode('; ',$headers['sec-websocket-extensions']));
 
 		if ($this->willSupportExtensions && !$extensions) {
 			$user->headers["extensions"] = $extensionslist;
 			$extensions = "Sec-WebSocket-Extensions: ".$extensionslist."\r\n";
 		}
+*/
+		call_user_func_array($this->onHandshake, array(&$headers));
 
-		$user->handshaked = TRUE;
+		if (isset($headers['__handshakeResponse'])) {
+			$this->send($headers['__handshakeResponse'] . "\r\n\r\n");
 
-		$webSocketKeyHash = sha1($headers['sec-websocket-key'] . $magicGUID);
+			$this->disconnect();
+
+			return;
+		}
+
+		$webSocketKeyHash = sha1($headers['sec-websocket-key'] . MAGIC_GUID);
 
 		$rawToken = "";
 		for ($i = 0; $i < 20; $i++) {
@@ -146,12 +323,17 @@ class ClientSocket extends \Gpws\Core\Socket {
 		}
 		$handshakeToken = base64_encode($rawToken) . "\r\n";
 
+$subProtocol = '';
+$extensions = '';
+
 		$handshakeResponse = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: $handshakeToken$subProtocol$extensions\r\n";
-		$this->ws_write($user,$handshakeResponse);
 
-		$this->dispatchEvent('onOpen', array('user' => $user));     	  	
+		$this->send($handshakeResponse);
+
+		call_user_func_array($this->onOpen, array($this, &$headers));
+
+		$this->_handshakeComplete = true;
 	}
-
 
 	public function write() {
 		$numBytes = socket_write($this->_socket, $this->_write_buffer);
@@ -160,12 +342,16 @@ class ClientSocket extends \Gpws\Core\Socket {
 			$this->_write_buffer = substr($this->_write_buffer, $numBytes);
 		}
 
+		if (!$this->_open) {
+			$this->disconnect(true);
+		}
+
 		if (!$this->_write_buffer) {
 			call_user_func($this->onWriteComplete);
 		}
 
 		if (!$this->_write_buffer) {
-			call_user_func($this->onStateChanged);
+			$this->onStateChanged();
 		}
 	}
 
@@ -179,8 +365,28 @@ class ClientSocket extends \Gpws\Core\Socket {
 		$this->_write_buffer .= $buffer;
 
 		if ($buffer_empty) {
-			call_user_func($this->onStateChanged);
+			$this->onStateChanged();
 		}
+	}
+
+
+	private function disconnect($immediate = false) {
+		if (!$this->_write_buffer) $immediate = true;
+
+		if ($immediate) {
+			socket_close($this->_socket);
+
+			call_user_func($this->onClose);
+			return;
+		}
+
+		$this->_open = false;
+
+// No longer reading, can discard any partial frames.
+		$this->_read_buffer = '';
+
+
+		$this->onStateChanged();
 	}
 
 }
