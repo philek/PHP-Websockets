@@ -12,7 +12,9 @@ class ClientSocket extends \Gpws\Core\Socket {
 	private $_handshakeComplete = false;
 
 	private $_read_buffer = '';
-	private $_write_buffer = '';
+	private $_read_buffer_header = NULL;
+
+	private $_write_buffer = array();
 
 	public function read() {
 		$buffer = '';
@@ -44,7 +46,6 @@ class ClientSocket extends \Gpws\Core\Socket {
 		}
 	}
 
-	private $_read_buffer_header = NULL;
 	private function parseFrame() {
 		while ($this->_read_buffer) {
 			if (!$this->_read_buffer_header) {
@@ -131,8 +132,6 @@ class ClientSocket extends \Gpws\Core\Socket {
 
 			return $payload;
 		}
-
-printf('Partial message'.PHP_EOL);
 
 		$this->_partialMessage = $payload;
 
@@ -335,18 +334,37 @@ $extensions = '';
 		$this->_handshakeComplete = true;
 	}
 
-	public function write() {
-		$numBytes = socket_write($this->_socket, $this->_write_buffer);
 
-		if ($numBytes > 0) {
-			$this->_write_buffer = substr($this->_write_buffer, $numBytes);
+	public function write() {
+		if (!$this->_write_buffer) return false;
+
+		if ($this->_write_buffer[0]['offset'] > 0) {
+// TODO Possibly put a limit here to cut out ~32kb out of the string. An amount that is close to the max that socket_write is likely to accept. Limit the useless memory usage in case of gigantic messages
+			$buffer = substr($this->_write_buffer[0]['data'], $this->_write_buffer[0]['offset']);
+		} else {
+			$buffer = $this->_write_buffer[0]['data'];
 		}
 
-		if (!$this->_open) {
-			$this->disconnect(true);
+		$numBytes = socket_write($this->_socket, $buffer);
+
+		unset($buffer); // Free ASAP just because we can.
+
+// TODO Handle Errors.
+
+
+		if ($numBytes > 0) {
+			$this->_write_buffer[0]['offset'] += $numBytes;
+			if ($this->_write_buffer[0]['offset'] >= strlen($this->_write_buffer[0]['data'])) {
+				array_shift($this->_write_buffer);
+			}
 		}
 
 		if (!$this->_write_buffer) {
+			if (!$this->_open) {
+				$this->disconnect(true);
+				return;
+			}
+
 			call_user_func($this->onWriteComplete);
 		}
 
@@ -362,7 +380,7 @@ $extensions = '';
 	public function send($buffer) {
 		$buffer_empty = !$this->_write_buffer;
 
-		$this->_write_buffer .= $buffer;
+		$this->_write_buffer[] = array('data' => $buffer, 'offset' => 0);
 
 		if ($buffer_empty) {
 			$this->onStateChanged();
