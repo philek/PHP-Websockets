@@ -10,6 +10,7 @@ trait EventEmitter {
 
 		$args = func_get_args();
 		array_shift($args);
+		array_unshift($args, $this);
 
 		foreach ($this->_events[$event] as $handler) {
 			call_user_func_array($handler, $args);
@@ -18,7 +19,21 @@ trait EventEmitter {
 		return true;
 	}
 
-	public function addListener($event, callable $handler) {
+
+	protected function raise_array($event, $args) {
+		if (!isset($this->_events[$event]) || !$this->_events[$event]) return false;
+
+		array_unshift($args, $this);
+
+		foreach ($this->_events[$event] as $handler) {
+			call_user_func_array($handler, $args);
+		}
+
+		return true;
+	}
+
+
+	public function addListener(string $event, callable $handler) {
 		if (!isset($this->_events[$event])) {
 			$this->_events[$event] = [];
 		}
@@ -28,7 +43,7 @@ trait EventEmitter {
 		return $this;
 	}
 
-	public function removeListener($event, callable $handler) {
+	public function removeListener(string $event, callable $handler) {
 		if (isset($this->_events[$event])) {
 			$key = array_search($handler, $this->_events[$event]);
 			if ($key !== false) {

@@ -12,6 +12,5 @@ interface Socket {
 	public function read();
 	public function write();
 
-	public function registerOnStateChanged(callable $func);
 	public function getState() : int;
 }

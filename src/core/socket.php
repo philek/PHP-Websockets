@@ -2,7 +2,9 @@
 
 namespace Gpws\Core;
 
-abstract class Socket implements \Gpws\Interfaces\Socket {
+abstract class Socket implements \Gpws\Interfaces\Socket, \Gpws\Interfaces\EventEmitter {
+	use \Gpws\Core\EventEmitter;
+
 	protected $_socket;
 
 	public function __construct($socket) {
@@ -15,16 +17,5 @@ abstract class Socket implements \Gpws\Interfaces\Socket {
 
 	public function getHandle() {
 		return $this->_socket;
-	}
-
-	private $_onStateChanged = array();
-	public function registerOnStateChanged(callable $callback) {
-		$this->_onStateChanged[] = $callback;
-	}
-
-	protected function onStateChanged() {
-		foreach ($this->_onStateChanged AS $callback) {
-			call_user_func($callback, $this);
-		}
 	}
 }

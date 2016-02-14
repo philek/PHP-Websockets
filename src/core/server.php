@@ -27,35 +27,42 @@ class Server implements \Gpws\Interfaces\Server {
 	}
 
 	public function bind(string $host, int $port) {
-		$sObj = new ListenSocket($host, $port, array($this, 'onOpenCallback'));
+		$sObj = new ListenSocket($host, $port);
+
+		$sObj->addListener('onConnectionReady', array($this, 'onConnectionReady'));
 
 		$this->_eventLoop->addSocket($sObj);
 	}
 
-	public function onOpenCallback($socket) {
+	public function onConnectionReady(\Gpws\Interfaces\Socket $listenObj) {
+		$socket = $listenObj->getWaitingConnection();
+
+// Error Checking.
+
 		$sObj = new ClientSocket($socket);
-		$sObj->onHandshake = array($this, 'onHandshakeCallback');
-		$sObj->onOpen = array($this, 'onConnectCallback');
+
+		$sObj->addListener('onHandshake', array($this, 'onHandshake'));
+		$sObj->addListener('onHandshakeComplete', array($this, 'onHandshakeComplete'));
 
 		$this->_eventLoop->addSocket($sObj);
 	}
 
-	public function onHandshakeCallback(array &$headers) {
+	public function onHandshake(\Gpws\Interfaces\Socket $socket, array $request, array &$response) {
 		// Find App
 
-		if (!isset($this->_appList[$headers['get']])) {
-			$headers['__handshakeResponse'] = "HTTP/1.1 404 Not Found";
+		if (!isset($this->_appList[$request['get']])) {
+			$response['handshakeError'] = "HTTP/1.1 404 Not Found";
 			return false;
 		}
 
-		$app = $this->_appList[$headers['get']];
+		$app = $this->_appList[$request['get']];
 
-		$app->onHandshake($headers);
+		$app->acceptClient($request, $response);
 	}
 
-	public function onConnectCallback(\Gpws\Interfaces\Socket $socket, array &$headers) {
+	public function onHandshakeComplete(\Gpws\Interfaces\Socket $socket, array $request) {
 		// Find App
-		$app = $this->_appList[$headers['get']];
+		$app = $this->_appList[$request['get']];
 
 		$cObj = $app->createClient($socket);
 	}

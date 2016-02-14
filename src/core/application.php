@@ -9,9 +9,10 @@ class Application implements \Gpws\Interfaces\Application {
 	private $headerOriginRequired = false;
 	private $headerProtocolRequired = false;
 
-	public function onHandshake(array &$headers) {
+	public function acceptClient(array $request, array &$response) : bool {
 		if (($this->headerOriginRequired && !isset($headers['origin']) ) || ($this->headerOriginRequired && !$this->checkOrigin($headers['origin']))) {
-			$headers['__handshakeResponse'] = "HTTP/1.1 403 Forbidden";
+			$response['StatusLine'] = "HTTP/1.1 403 Forbidden";
+			$response['error'] = true;
 			return false;
 		}
 
@@ -29,17 +30,16 @@ class Application implements \Gpws\Interfaces\Application {
 
 */
 
+		return true;
+
 	}
 
 	public function createClient(\Gpws\Interfaces\Socket $socket) : \Gpws\Interfaces\Client {
 		$cObj = new Client($socket);
 
-		$cObj->onConnect = array($this, 'onConnect');
-		$cObj->onMessage = array($this, 'onMessage');
-		$cObj->onDisconnect = array($this, 'onDisconnect');
-
-
-
+		$cObj->addListener('onConnect', array($this, 'onConnect'));
+		$cObj->addListener('onMessage', array($this, 'onMessage'));
+		$cObj->addListener('onDisconnect', array($this, 'onDisconnect'));
 
 		return $cObj;
 	}
@@ -48,7 +48,7 @@ class Application implements \Gpws\Interfaces\Application {
 
 
 	}
-	public function onMessage(\Gpws\Interfaces\Client $client) {
+	public function onMessage(\Gpws\Interfaces\Client $client, string $message) {
 
 
 	}

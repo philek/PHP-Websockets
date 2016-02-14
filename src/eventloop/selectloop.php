@@ -31,7 +31,7 @@ class SelectLoop implements \Gpws\Interfaces\EventLoop {
 	public function addSocket(\Gpws\Interfaces\Socket $socket) {
 		$this->_socketList[$socket->getId()] = $socket;
 
-		$socket->registerOnStateChanged(array($this, 'socketStateChangedCallback'));
+		$socket->addListener('onStateChanged', array($this, 'socketStateChangedCallback'));
 
 		$this->socketStateChangedCallback($socket);
 	}
