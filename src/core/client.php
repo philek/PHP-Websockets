@@ -26,13 +26,13 @@ class Client implements \Gpws\Interfaces\Client, \Gpws\Interfaces\EventEmitter {
 	public function onWriteCompleteCallback(\Gpws\Interfaces\Socket $socket) {
 		if ($this->_messageQueue) {
 			$message = array_shift($this->_messageQueue);
-			$this->_socket->send($message->getContent());
+			$this->_socket->sendMessage($message);
 		}
 	}
 
 	public function queueMessage(\Gpws\Interfaces\OutboundMessage $message) : int {
 		if ($this->_socket->writeBufferEmpty()) {
-			$this->_socket->send($message->getContent());
+			$this->_socket->sendMessage($message);
 			return 0;
 		}
 

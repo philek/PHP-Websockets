@@ -2,7 +2,6 @@
 
 namespace Gpws\Interfaces;
 
-interface OutboundMessage {
+interface Message {
 	public function getContent() : string;
-	public function getFramedContent() : string;
 }

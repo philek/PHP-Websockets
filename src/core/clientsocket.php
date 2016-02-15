@@ -158,7 +158,7 @@ if (!defined('NOOUTPUT')) printf('[DeFrame] Ping cannot be fragmented.'.PHP_EOL)
 				}
 
 				$message = new \Gpws\Message\PongMessage($this->applyMask($headers, $payload));
-				$this->send($message->getContent());
+				$this->sendMessage($message);
 
 				return false;
 
@@ -319,7 +319,7 @@ if (!defined('NOOUTPUT')) printf('[DeFrame] Invalid UTF8 received %s. Aborting c
 
 //		$data .= "\r\n";
 
-		$this->send($data);
+		$this->sendRaw($data);
 
 
 		if ($error) {
@@ -519,8 +519,15 @@ if (!defined('NOOUTPUT')) printf('[Network] Write Socket error: ' . socket_strer
 		return ((!$this->_closing) ? self::SOCKET_READ : 0) | ($this->_write_buffer ? self::SOCKET_WRITE : 0);
 	}
 
-	public function send($buffer) {
+	public function sendMessage(\Gpws\Interfaces\OutboundMessage $message) {
+		$frame = $message->getFramedContent();
+		$this->sendRaw($frame);
+	}
+
+	protected function sendRaw(string $buffer) {
+
 if (!defined('NOOUTPUT')) printf('[NetBuffer] Adding to send buffer %d%s', strlen($buffer), PHP_EOL);
+assert(strlen($buffer) > 0);
 
 		$buffer_empty = !$this->_write_buffer;
 
@@ -544,7 +551,7 @@ if (!defined('NOOUTPUT')) printf('[NetBuffer] Adding to send buffer %d%s', strle
 
 		if ($send_message) {
 			$message = new \Gpws\Message\CloseMessage();
-			$this->send($message->getContent());
+			$this->sendMessage($message);
 		}
 
 		if (!$this->_write_buffer) {
