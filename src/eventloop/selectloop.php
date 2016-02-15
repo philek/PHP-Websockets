@@ -6,6 +6,8 @@ class SelectLoop implements \Gpws\Interfaces\EventLoop {
 
 	public function run() {
 		while (true) {
+if (!defined('NOOUTPUT')) printf('[EventLoop] Loop.%s', PHP_EOL);
+
 			$read = $this->_read_sockets;
 			$write = $this->_write_sockets;
 			$except = null;
@@ -29,6 +31,8 @@ class SelectLoop implements \Gpws\Interfaces\EventLoop {
 	private $_write_sockets = array();
 
 	public function addSocket(\Gpws\Interfaces\Socket $socket) {
+if (!defined('NOOUTPUT')) printf('[EventLoop] ADD SOCKET: ' . $socket->getId() . PHP_EOL);
+
 		$this->_socketList[$socket->getId()] = $socket;
 
 		$socket->addListener('onStateChanged', array($this, 'socketStateChangedCallback'));
@@ -37,6 +41,12 @@ class SelectLoop implements \Gpws\Interfaces\EventLoop {
 	}
 
 	public function socketStateChangedCallback(\Gpws\Interfaces\Socket $socket) {
+if (!defined('NOOUTPUT')) printf('[EventLoop] UPDATE SOCKET: ' . $socket->getId() . " STATE " . $socket->getState() . PHP_EOL);
+		if (!isset($this->_socketList[$socket->getId()])) {
+			trigger_error('INVALID SOCKET UPDATE', E_USER_WARNING);
+			return;
+		}
+
 		$status = $socket->getState();
 
 		$socket_handle = $socket->getHandle();
@@ -55,7 +65,10 @@ class SelectLoop implements \Gpws\Interfaces\EventLoop {
 	}
 
 	public function delSocket(\Gpws\Interfaces\Socket $socket) {
+		$socket->removeListener('onStateChanged', array($this, 'socketStateChangedCallback'));
+
 		$socket_id = $socket->getId();
+if (!defined('NOOUTPUT')) printf('[EventLoop] DEL SOCKET: ' . $socket_id . PHP_EOL);
 		
 		unset($this->_socketList[$socket_id]);
 

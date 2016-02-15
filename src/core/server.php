@@ -45,6 +45,10 @@ class Server implements \Gpws\Interfaces\Server {
 		$sObj->addListener('onHandshakeComplete', array($this, 'onHandshakeComplete'));
 
 		$this->_eventLoop->addSocket($sObj);
+
+		$eventLoop = $this->_eventLoop;
+
+		$sObj->addListener('onClose', function(\Gpws\Interfaces\Socket $socket) use ($eventLoop) { $eventLoop->delSocket($socket); });
 	}
 
 	public function onHandshake(\Gpws\Interfaces\Socket $socket, array $request, array &$response) {

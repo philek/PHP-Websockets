@@ -4,11 +4,11 @@ namespace Gpws\Message;
 
 /* Message Class should be immutable so that we don't waste memory creating copies */
 
-class TextMessage implements \Gpws\Interfaces\OutboundMessage {
+class PongMessage implements \Gpws\Interfaces\OutboundMessage {
 
 	private $content;
 
-	public function __construct(string $text) {
+	public function __construct(string $text = '') {
 		$this->content = $text;
 	}
 
@@ -17,7 +17,7 @@ class TextMessage implements \Gpws\Interfaces\OutboundMessage {
 	}
 
 
-	protected function frame($message, $messageType='text', $messageContinues=false) {
+	protected function frame($message, $messageType = 'pong', $messageContinues = false) {
 		switch ($messageType) {
 			case 'continuous': $bytes[1] = 0;
 				break;
@@ -40,7 +40,7 @@ class TextMessage implements \Gpws\Interfaces\OutboundMessage {
 		if ($length < 126) {
 			$bytes[2] = $length;
 		} 
-		elseif ($length < 65536) {
+		elseif ($length <= 65536) {
 			$bytes[2] = 126;
 			$bytes[3] = ( $length >> 8 ) & 255;
 			$bytes[4] = ( $length      ) & 255;

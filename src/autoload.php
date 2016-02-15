@@ -12,8 +12,6 @@ namespace Gpws\Core;
  */
 class Autoload {
 	static public function load($class) {
-printf('Load class: %s%s', $class, PHP_EOL);
-
 		if (substr($class, 0, 5) !== 'Gpws\\') return false;
 
 		$path = strtolower(str_replace(array('Gpws\\', '\\'), array(__DIR__ . '/', '/'), $class)) . '.php';

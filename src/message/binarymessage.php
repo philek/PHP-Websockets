@@ -4,7 +4,7 @@ namespace Gpws\Message;
 
 /* Message Class should be immutable so that we don't waste memory creating copies */
 
-class TextMessage implements \Gpws\Interfaces\OutboundMessage {
+class BinaryMessage implements \Gpws\Interfaces\OutboundMessage {
 
 	private $content;
 
@@ -17,7 +17,7 @@ class TextMessage implements \Gpws\Interfaces\OutboundMessage {
 	}
 
 
-	protected function frame($message, $messageType='text', $messageContinues=false) {
+	protected function frame($message, $messageType='binary', $messageContinues=false) {
 		switch ($messageType) {
 			case 'continuous': $bytes[1] = 0;
 				break;

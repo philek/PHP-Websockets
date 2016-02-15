@@ -48,7 +48,7 @@ class Application implements \Gpws\Interfaces\Application {
 
 
 	}
-	public function onMessage(\Gpws\Interfaces\Client $client, string $message) {
+	public function onMessage(\Gpws\Interfaces\Client $client, string $message, bool $binary = false) {
 
 
 	}
