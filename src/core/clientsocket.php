@@ -12,7 +12,6 @@ class ClientSocket extends \Gpws\Core\Socket {
 	private $_handshakeComplete = false;
 
 	private $_read_buffer = '';
-	private $_read_buffer_header = NULL;
 
 	private $_write_buffer = array();
 
@@ -54,250 +53,85 @@ if (!defined('NOOUTPUT')) printf('[Network] Read %d bytes%s', $numBytes, PHP_EOL
 		$this->parseBuffer();
 	}
 
+	private $_partialFrame = NULL;
+	private $_partialMessage = NULL;
+
 	private function parseBuffer() {
 		if (!$this->_handshakeComplete) {
 			$this->handleHandshake();
 			return;
 		}
 
-		$this->parseFrame();
-	}
-
-	private function parseFrame() {
 		while ($this->_read_buffer) {
-if (!defined('NOOUTPUT')) printf("[ReadLoop] Current read buffer length: %d%s", strlen($this->_read_buffer), PHP_EOL);
+if (!defined('NOOUTPUT')) printf('[ReadLoop] Loop%s', PHP_EOL);
 
-			if (!$this->_read_buffer_header) {
-				$frameHeader = $this->extractHeader($this->_read_buffer);
-
-if (!defined('NOOUTPUT')) printf("[ReadLoop] Frame Detected: Type %d Length: %d Offset: %d Payload: %d%s", $frameHeader['opcode'], $frameHeader['offset']+$frameHeader['length'], $frameHeader['offset'], $frameHeader['length'], PHP_EOL);
-
-				if (!$frameHeader) {
-if (!defined('NOOUTPUT')) printf('[ReadLoop] Frame Header not ready.%s', PHP_EOL);
-					return;
-				}
-			} else {
-				$frameHeader = $this->_read_buffer_header;
+			if ($this->_partialFrame === NULL) {
+				$this->_partialFrame = new \Gpws\Core\Frame;
 			}
 
+			$numBytes = $this->_partialFrame->addData($this->_read_buffer);
 
-			if ($frameHeader['offset'] + $frameHeader['length'] > strlen($this->_read_buffer)) {
-				$this->_read_buffer_header = $frameHeader;
-if (!defined('NOOUTPUT')) printf('[ReadLoop] Frame data not complete.'.PHP_EOL);
-				return;
+			if ($numBytes === 0) {
+				break; // Not enough data to do anything.
 			}
 
-			$frame = substr($this->_read_buffer, $frameHeader['offset'], $frameHeader['length']);
+			if ($this->_partialFrame->isInvalid()) {
+				$this->raise('onError');
 
-			$message = $this->deFrame($frame, $frameHeader);
-			if ($message !== false) {
+				$this->close(false);
 
-if (!defined('NOOUTPUT')) printf('[ReadLoop] Proper Message Parsed%s', PHP_EOL);
-
-				$this->raise('onRead', $message['data'], $message['binary']);
+				break;
 			}
 
-			$this->_read_buffer = substr($this->_read_buffer, $frameHeader['offset'] + $frameHeader['length']);
-			$this->_read_buffer_header = '';
+			$this->_read_buffer = substr($this->_read_buffer, $numBytes);
+
+			if ($this->_partialFrame->isReady()) {
+if (!defined('NOOUTPUT')) printf('[ReadLoop] Proper Frame Parsed%s', PHP_EOL);
+
+				$this->handleFrame($this->_partialFrame);
+
+				$this->_partialFrame = NULL;
+			}
 		}
 	}
 
-	private $_partialMessage = NULL;
-	private $_partialMessageBinary = NULL;
 
-	protected function deframe($payload, $headers) {
-		if ($this->checkRSVBits($headers)) {
-if (!defined('NOOUTPUT')) printf('[DeFrame] Invalid rsv bits (%d%d%d) received. Aborting connection.'.PHP_EOL, $headers['rsv1'], $headers['rsv2'], $headers['rsv3']);
-
-			$this->raise('onError');
-
-			$this->close(false);
-
-			return false;
-		}
-
-
-
-		switch ($headers['opcode']) {
+	private function handleFrame(\Gpws\Interfaces\Frame $frame) {
+		switch ($frame->getType()) {
 			case 0:
-if (!defined('NOOUTPUT')) printf("[DeFrame] Fragmented Packet Received.%s", PHP_EOL);
-				if ($this->_partialMessage === NULL) {
-if (!defined('NOOUTPUT')) printf("[DeFrame] Fragmented Packet with nothing to continue. Aborting.%s", PHP_EOL);
-					$this->close(false);
-					return false;
-				}
-				break;
-
 			case 1:
 			case 2:
-				if ($this->_partialMessage !== NULL) {
-if (!defined('NOOUTPUT')) printf("[DeFrame] Expecting continuation packet. Aborting.%s", PHP_EOL);
+				if ($this->_partialMessage === NULL) {
+					$this->_partialMessage = new \Gpws\Message\InboundMessage;
+				}
+
+				if (!$this->_partialMessage->addFrame($frame)) {
 					$this->close(false);
-					return false;
+
+					return;
+				}
+
+				if ($this->_partialMessage->isReady()) {
+if (!defined('NOOUTPUT')) printf('[ReadLoop] Proper Message Parsed%s', PHP_EOL);
+
+					$this->raise('onRead', $this->_partialMessage);
+
+					$this->_partialMessage = NULL;
 				}
 				break;
 
 			case 8:
 				$this->close();
-if (!defined('NOOUTPUT')) printf('[DeFrame] Disconnect packet received.' . PHP_EOL);
-
-				return false;
+				return;
 
 			case 9:
-				if ($headers['length'] > 125) {
-if (!defined('NOOUTPUT')) printf('[DeFrame] Invalid ping - too long.' . PHP_EOL);
-					$this->close();
-
-					return false;
-				}
-
-				if (!$headers['fin']) {
-if (!defined('NOOUTPUT')) printf('[DeFrame] Ping cannot be fragmented.'.PHP_EOL);
-					$this->close(false);
-
-					return false;
-				}
-
 				$message = new \Gpws\Message\PongMessage($this->applyMask($headers, $payload));
 				$this->sendMessage($message);
-
-				return false;
+				return;
 
 			case 10:
-// A Pong frame MAY be sent unsolicited. This serves as a unidirectional heartbeat. A response to an unsolicited Pong frame is not expected.
-// IE 11 default behavior send PONG ~30sec between them. Just ignore them.
-				if (!$headers['fin']) {
-if (!defined('NOOUTPUT')) printf('[DeFrame] Pong cannot be fragmented.'.PHP_EOL);
-					$this->close(false);
-
-					return false;
-				}
-
-				return false;  
-
-			default:
-if (!defined('NOOUTPUT')) printf('[DeFrame] Invalid opcode %d received. Aborting connection.%s', $headers['opcode'], PHP_EOL);
-
-				$this->raise('onError');
-
-				$this->close(false);
-				break;
+				// NOOP
 		}
-
-		if ($headers['opcode'] !== 0) {
-			$this->_partialMessage = '';
-			$this->_partialMessageBinary = $headers['opcode'] == 2;
-		}
-
-		$this->_partialMessage .= $this->applyMask($headers, $payload);
-
-
-
-		if ($headers['fin']) {
-			if (!$this->_partialMessageBinary && !$this->isValidUTF8($this->_partialMessage)) {
-if (!defined('NOOUTPUT')) printf('[DeFrame] Invalid UTF8 received %s. Aborting connection.%s', $this->_partialMessage, PHP_EOL);
-
-				$this->close(false);
-
-				return false;
-			}
-
-
-
-			$frame = array(
-				'data' => $this->_partialMessage,
-				'binary' => $this->_partialMessageBinary
-			);
-
-			$this->_partialMessage = NULL;
-			$this->_partialMessageBinary = NULL;
-
-			return $frame;
-		}
-
-		return false;
-	}
-
-	private function isValidUTF8($string) {
-		return preg_match('//u', $string);
-
-		return preg_match('%^(?:
-      [\x09\x0A\x0D\x20-\x7E]            # ASCII
-    | [\xC2-\xDF][\x80-\xBF]             # non-overlong 2-byte
-    | \xE0[\xA0-\xBF][\x80-\xBF]         # excluding overlongs
-    | [\xE1-\xEC\xEE\xEF][\x80-\xBF]{2}  # straight 3-byte
-    | \xED[\x80-\x9F][\x80-\xBF]         # excluding surrogates
-    | \xF0[\x90-\xBF][\x80-\xBF]{2}      # planes 1-3
-    | [\xF1-\xF3][\x80-\xBF]{3}          # planes 4-15
-    | \xF4[\x80-\x8F][\x80-\xBF]{2}      # plane 16
-)*$%xs', $string);
-	}
-
-
-	protected function extractHeader($message) {
-		if (strlen($message) < 2) return false;
-
-		$header = array(
-			'fin'       => ord($message[0])>>7 & 1,
-			'rsv1'      => ord($message[0])>>6 & 1,
-			'rsv2'      => ord($message[0])>>5 & 1,
-			'rsv3'      => ord($message[0])>>4 & 1,
-			'opcode'    => ord($message[0] & chr(15)),
-			'hasmask'   => ord($message[1])>>7 & 1,
-			'length'    => 0,
-			'indexMask' => 2,
-			'offset'    => 0,
-			'mask'      => ""
-		);
-
-		$header['length'] = ord($message[1] & chr(127)) ;
-	
-		if ($header['length'] == 126) {
-			if (strlen($message) < 4) return false;
-
-			$header['indexMask'] = 4;
-			$header['length'] =  (ord($message[2])<<8) | (ord($message[3])) ;
-		} else if ($header['length'] == 127) {
-			if (strlen($message) < 10) return false;
-
-			$header['indexMask'] = 10;
-			$header['length'] = (ord($message[2]) << 56 ) | ( ord($message[3]) << 48 ) | ( ord($message[4]) << 40 ) | (ord($message[5]) << 32 ) | ( ord($message[6]) << 24 ) | ( ord($message[7]) << 16 ) | (ord($message[8]) << 8  ) | ( ord($message[9]));
-		} 
-
-		$header['offset'] = $header['indexMask'];
-		if ($header['hasmask']) {
-			if (strlen($message) < $header['indexMask'] + 4) return false;
-
-			$header['mask'] = $message[$header['indexMask']] . $message[$header['indexMask']+1] . $message[$header['indexMask']+2] . $message[$header['indexMask']+3];
-			$header['offset'] += 4;
-		}
-
-		return $header;
-	}
-
-	protected function applyMask($headers, $payload) {
-		$effectiveMask = "";
-		if ($headers['hasmask']) {
-			$mask = $headers['mask'];
-		} else {
-			return $payload;
-		}
-
-		$effectiveMask = str_repeat($mask, ($headers['length'] / 4) + 1);
-		$over = $headers['length'] - strlen($effectiveMask);
-		$effectiveMask = substr($effectiveMask, 0, $over);
-		
-		return $effectiveMask ^ $payload;
-	}
-
-// override this method if you are using an extension where the RSV bits are used.
-	protected function checkRSVBits($headers) {
-		if ($headers['rsv1'] + $headers['rsv2'] + $headers['rsv3'] > 0) {
-// $this->disconnect($user); // todo: fail connection
-			return true;
-		}
-
-		return false;
 	}
 
 
@@ -550,11 +384,10 @@ assert(strlen($buffer) > 0);
 
 
 	private function close($send_message = true) {
+		$this->_partialFrame = NULL;
 		$this->_partialMessage = NULL;
-		$this->_partialMessageBinary = NULL;
 
 		$this->_read_buffer = NULL;
-		$this->_read_buffer_header = NULL;
 
 		$this->_closing = true;
 		$this->raise('onStateChanged');
@@ -584,16 +417,13 @@ if (!defined('NOOUTPUT')) printf('[Network] CLOSE FINISHED.'.PHP_EOL);
 
 		$this->_socket = NULL;
 
+		$this->_partialFrame = NULL;
 		$this->_partialMessage = NULL;
-		$this->_partialMessageBinary = NULL;
 
 		$this->_read_buffer = NULL;
-		$this->_read_buffer_header = NULL;
-
 		$this->_write_buffer = NULL;
 
 		$this->_closing = true;
-
 		$this->raise('onStateChanged');
 	}
 

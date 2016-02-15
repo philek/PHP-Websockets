@@ -17,10 +17,10 @@ class Client implements \Gpws\Interfaces\Client, \Gpws\Interfaces\EventEmitter {
 
 	private $_messageQueue = array();
 
-	public function onReadCallback(\Gpws\Interfaces\Socket $socket, string $frameContent, bool $binary = false) {
+	public function onReadCallback(\Gpws\Interfaces\Socket $socket, \Gpws\Interfaces\InboundMessage $message) {
 //		printf('GOT FRAME: %s%s', $frameContent, PHP_EOL);
 
-		$this->raise('onMessage', $frameContent, $binary);
+		$this->raise('onMessage', $message);
 	}
 
 	public function onWriteCompleteCallback(\Gpws\Interfaces\Socket $socket) {
