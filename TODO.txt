@@ -1,0 +1,16 @@
+clietnsocket.php:258 - Move checking for GET request outside of loop only on first line.
+clietnsocket.php:271 - Move verifying existance GET along with above
+
+
+
+TODO and possible ideas:
+- Create a "HandshakeResponse" class for more readability.
+- Move all frame parsing to an InboundMessageBuilder class
+- Move frame building to a better location. Also make sure the frame data is cached so we don't waste memory.
+- Handle PING/PONG and DISCONNECT messages from the server.
+
+
+
+Possible UNIT Tests:
+1. Create 4MB message then "send it" to multiple clients. Verify no additional memory usage.
+

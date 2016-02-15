@@ -11,7 +11,7 @@ if (!defined('NOOUTPUT')) printf('[EventLoop] Loop.%s', PHP_EOL);
 			$read = $this->_read_sockets;
 			$write = $this->_write_sockets;
 			$except = null;
-
+usleep(1000000);
 			socket_select($read, $write, $except, $this->_nextTimer);
 
 			foreach ($write as $socket) {

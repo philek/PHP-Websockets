@@ -55,11 +55,12 @@ if (!defined('NOOUTPUT')) printf('[Network] Read %d bytes%s', $numBytes, PHP_EOL
 	}
 
 	private function parseBuffer() {
-		if ($this->_handshakeComplete) {
-			$this->parseFrame();
-		} else {
-			$this->parseHandshake();
+		if (!$this->_handshakeComplete) {
+			$this->handleHandshake();
+			return;
 		}
+
+		$this->parseFrame();
 	}
 
 	private function parseFrame() {
@@ -300,8 +301,15 @@ if (!defined('NOOUTPUT')) printf('[DeFrame] Invalid UTF8 received %s. Aborting c
 	}
 
 
-	private function parseHandshake() {
-		$handshakeResponse = $this->getHandshakeResponse();
+	private function handleHandshake() {
+		$clientHeaders = $this->parseHandshake();
+
+// Header not complete yet.
+		if ($clientHeaders === false) {
+			return;
+		}
+
+		$handshakeResponse = $this->getHandshakeResponse($clientHeaders);
 
 		if (!$handshakeResponse) return;
 
@@ -326,20 +334,15 @@ if (!defined('NOOUTPUT')) printf('[DeFrame] Invalid UTF8 received %s. Aborting c
 			$this->close(false);
 		}
 
-		$this->raise('onHandshakeComplete', $this->_clientHeaders);
+		$this->raise('onHandshakeComplete', $clientHeaders);
 
 		$this->_handshakeComplete = true;
 	}
 
-	private function getHandshakeResponse() {
-		$handshakeResponse = array('StatusLine' => 'HTTP/1.1 101 Switching Protocols', 'error' => false);
-
+	private function parseHandshake() {
 		if (strpos($this->_read_buffer, "\r\n\r\n") === FALSE) {
 			if (strlen($this->_read_buffer >= MAX_HANDSHAKE_SIZE)) {
-				$handshakeResponse['StatusLine'] = 'HTTP/1.1 413 Request Entity Too Large';
-				$handshakeResponse['error'] = true;
-
-				return $handshakeResponse;
+				return array();
 			}
 
 			return false;
@@ -348,9 +351,19 @@ if (!defined('NOOUTPUT')) printf('[DeFrame] Invalid UTF8 received %s. Aborting c
 // TODO only use the part up to \r\n\r\n... Or check that nothing after that?
 if (!defined('NOOUTPUT')) printf('[ReadLoop] New Client: %s%s', str_replace("\r\n", "  ", $this->_read_buffer), PHP_EOL);
 
-		$clientHeaders = array();
 		$lines = explode("\r\n", $this->_read_buffer);
 		$this->_read_buffer = '';
+
+		$clientHeaders = array();
+
+		$requestLine = array_shift($lines);
+
+		if (preg_match("/GET (.*) HTTP/i", $requestLine, $reqResource)) {
+			$clientHeaders['get'] = trim($reqResource[1]);
+		} else {
+			return $clientHeaders;
+		}
+
 
 		//protocol and extensions can be sent on multiple line.
 		//$clientHeaders['sec-websocket-protocol']='';
@@ -369,54 +382,53 @@ if (!defined('NOOUTPUT')) printf('[ReadLoop] New Client: %s%s', str_replace("\r\
 						$clientHeaders[strtolower(trim($header[0]))] = trim($header[1]);
 						break;
 				}
-			} else if (stripos($line,"get ") !== false) {
-				if (preg_match("/GET (.*) HTTP/i", $line, $reqResource)) {
-					$clientHeaders['get'] = trim($reqResource[1]);
-				} else {
-					$handshakeResponse['StatusLine'] = "HTTP/1.1 400 Bad Request";
-					$handshakeResponse['error'] = true;
-					return $handshakeResponse;
-				}
 			}
 		}
 
+		return $clientHeaders;
+	}
 
-		do {
-			if (!isset($clientHeaders['get'])) {
-				$handshakeResponse['StatusLine'] = "HTTP/1.1 405 Method Not Allowed";
-				$handshakeResponse['error'] = true;
-				break;
-			}
+	private function getHandshakeResponse($clientHeaders) {
+		if (!$clientHeaders) {
+			$handshakeResponse = array();
+			$handshakeResponse['StatusLine'] = 'HTTP/1.1 413 Request Entity Too Large';
+			$handshakeResponse['error'] = true;
+			return $handshakeResponse;
+		}
 
-			if (!isset($clientHeaders['host'])) {
-				$handshakeResponse['StatusLine'] = "HTTP/1.1 400 Bad Request";
-				$handshakeResponse['error'] = true;
-				break;
-			}
-			if (!isset($clientHeaders['upgrade']) || strtolower($clientHeaders['upgrade']) != 'websocket') {
-				$handshakeResponse['StatusLine'] = "HTTP/1.1 400 Bad Request";
-				$handshakeResponse['error'] = true;
-				break;
-			}
-			if (!isset($clientHeaders['connection']) || strpos(strtolower($clientHeaders['connection']), 'upgrade') === FALSE) {
-				$handshakeResponse['StatusLine'] = "HTTP/1.1 400 Bad Request";
-				$handshakeResponse['error'] = true;
-				break;
-			}
-			if (!isset($clientHeaders['sec-websocket-key'])) {
-				$handshakeResponse['StatusLine'] = "HTTP/1.1 400 Bad Request";
-				$handshakeResponse['error'] = true;
-				break;
-			}
-			if (!isset($clientHeaders['sec-websocket-version']) || strtolower($clientHeaders['sec-websocket-version']) != 13) {
-				$handshakeResponse['StatusLine'] = "HTTP/1.1 426 Upgrade Required";
-				$handshakeResponse['Sec-WebSocketVersion'] = "13";
-				$handshakeResponse['error'] = true;
-				break;
-			}
-		} while (false);
 
-		if ($handshakeResponse['error']) {
+		$handshakeResponse = array('StatusLine' => 'HTTP/1.1 101 Switching Protocols', 'error' => false);
+
+		if (!isset($clientHeaders['get'])) {
+			$handshakeResponse['StatusLine'] = "HTTP/1.1 405 Method Not Allowed";
+			$handshakeResponse['error'] = true;
+			return $handshakeResponse;
+		}
+
+		if (!isset($clientHeaders['host'])) {
+			$handshakeResponse['StatusLine'] = "HTTP/1.1 400 Bad Request";
+			$handshakeResponse['error'] = true;
+			return $handshakeResponse;
+		}
+		if (!isset($clientHeaders['upgrade']) || strtolower($clientHeaders['upgrade']) != 'websocket') {
+			$handshakeResponse['StatusLine'] = "HTTP/1.1 400 Bad Request";
+			$handshakeResponse['error'] = true;
+			return $handshakeResponse;
+		}
+		if (!isset($clientHeaders['connection']) || strpos(strtolower($clientHeaders['connection']), 'upgrade') === FALSE) {
+			$handshakeResponse['StatusLine'] = "HTTP/1.1 400 Bad Request";
+			$handshakeResponse['error'] = true;
+			return $handshakeResponse;
+		}
+		if (!isset($clientHeaders['sec-websocket-key'])) {
+			$handshakeResponse['StatusLine'] = "HTTP/1.1 400 Bad Request";
+			$handshakeResponse['error'] = true;
+			return $handshakeResponse;
+		}
+		if (!isset($clientHeaders['sec-websocket-version']) || strtolower($clientHeaders['sec-websocket-version']) != 13) {
+			$handshakeResponse['StatusLine'] = "HTTP/1.1 426 Upgrade Required";
+			$handshakeResponse['Sec-WebSocketVersion'] = "13";
+			$handshakeResponse['error'] = true;
 			return $handshakeResponse;
 		}
 
@@ -451,8 +463,6 @@ if (!defined('NOOUTPUT')) printf('[ReadLoop] New Client: %s%s', str_replace("\r\
 		$handshakeResponse['Upgrade'] = 'websocket';
 		$handshakeResponse['Connection'] = 'Upgrade';
 		$handshakeResponse['Sec-WebSocket-Accept'] = $handshakeToken;
-
-		$this->_clientHeaders = $clientHeaders;
 
 		return $handshakeResponse;
 	}
