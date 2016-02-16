@@ -5,6 +5,7 @@ namespace Gpws\Core;
 define('MAX_HANDSHAKE_SIZE', 8 * 1024);
 define('MAX_BUFFER_SIZE', 24 * 1024 * 1024);
 define('MAGIC_GUID', "258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
+define('SERVER_NAME', 'ghedipunk/PHP-Websockets-0.0~fr1');
 
 class ClientSocket extends \Gpws\Core\Socket {
 	private $_closing = false;
@@ -297,7 +298,7 @@ if (!defined('NOOUTPUT')) printf('[ReadLoop] New Client: %s%s', str_replace("\r\
 		}
 		$handshakeToken = base64_encode($rawToken) . "\r\n";
 
-
+		$handshakeResponse['Server'] = SERVER_NAME;
 		$handshakeResponse['Upgrade'] = 'websocket';
 		$handshakeResponse['Connection'] = 'Upgrade';
 		$handshakeResponse['Sec-WebSocket-Accept'] = $handshakeToken;
