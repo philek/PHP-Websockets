@@ -76,12 +76,16 @@ if (!defined('NOOUTPUT')) printf('[ReadLoop] Loop%s', PHP_EOL);
 			}
 
 			if ($this->_partialFrame->isInvalid()) {
+if (!defined('NOOUTPUT')) printf('[ReadLoop] Invalid Frame. Must Close. %s', PHP_EOL);
+
 				$this->raise('onError');
 
 				$this->close(false);
 
 				break;
 			}
+
+			assert($numBytes > 0);
 
 			$this->_read_buffer = substr($this->_read_buffer, $numBytes);
 
@@ -125,7 +129,7 @@ if (!defined('NOOUTPUT')) printf('[ReadLoop] Proper Message Parsed%s', PHP_EOL);
 				return;
 
 			case 9:
-				$message = new \Gpws\Message\PongMessage($this->applyMask($headers, $payload));
+				$message = new \Gpws\Message\PongMessage($frame->getPayload());
 				$this->sendMessage($message);
 				return;
 
@@ -391,6 +395,10 @@ assert(strlen($buffer) > 0);
 
 		$this->_closing = true;
 		$this->raise('onStateChanged');
+
+		if ($this->_write_buffer && $this->_write_buffer[0]['offset'] == 0) {
+			$this->_write_buffer = array();
+		}
 
 		if ($send_message) {
 			$message = new \Gpws\Message\CloseMessage();

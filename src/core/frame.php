@@ -42,7 +42,7 @@ class Frame implements \Gpws\Interfaces\Frame {
 			$offset = $this->_header['offset'];
 
 			if (!$this->verifyHeader()) {
-				return false;
+				return -1;
 			}
 
 		} else {
