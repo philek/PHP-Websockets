@@ -397,9 +397,11 @@ assert(strlen($buffer) > 0);
 		$this->_closing = true;
 		$this->raise('onStateChanged');
 
+/*
 		if ($this->_write_buffer && $this->_write_buffer[0]['offset'] == 0) {
 			$this->_write_buffer = array();
 		}
+*/
 
 		if ($send_message) {
 			$message = new \Gpws\Message\CloseMessage();
