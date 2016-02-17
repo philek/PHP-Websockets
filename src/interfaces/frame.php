@@ -8,7 +8,7 @@ interface Frame {
 	public function isReady() : bool;
 	public function isInvalid() : bool;
 
-	public function getType() : int;
+	public function getOpcode() : int;
 
 	public function isFin() : bool;
 

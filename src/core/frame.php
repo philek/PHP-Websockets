@@ -14,7 +14,7 @@ class Frame implements \Gpws\Interfaces\Frame {
 		return $this->_invalid;
 	}
 
-	public function getType() : int {
+	public function getOpcode() : int {
 		assert($this->_ready);
 		return $this->_header['opcode'];
 	}
@@ -30,7 +30,8 @@ class Frame implements \Gpws\Interfaces\Frame {
 	}
 
 
-	private $_header = NULL;
+// TODO TEMPORARY, CREATE GETTErS
+	public $_header = NULL;
 	private $_payload = '';
 
 	public function addData(string $buffer) : int {
@@ -111,13 +112,10 @@ class Frame implements \Gpws\Interfaces\Frame {
 
 
 	protected function verifyHeader() : bool {
-		if ($this->_header['rsv1'] + $this->_header['rsv2'] + $this->_header['rsv3'] > 0) {
-			$this->_invalid = true;
-			return false;
-		}
-
 		if (!in_array($this->_header['opcode'], array(0, 1, 2, 8, 9, 10))) {
+
 			$this->_invalid = true;
+
 			return false;
 		}
 

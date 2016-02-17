@@ -1,47 +1,36 @@
 <?php
 
-namespace Gpws\Message;
+namespace Gpws\Core;
 
-/* Message Class should be immutable so that we don't waste memory creating copies */
+class MessageFramer {
 
-abstract class OutboundMessage implements \Gpws\Interfaces\OutboundMessage {
-
-	private $content;
-	private $type;
-
-	public function __construct(string $type, string $text) {
-		$this->content = $text;
-		$this->type = $type;
-	}
-
-	public function getContent() : string {
-		return $this->content;
-	}
-
-	private $_framed = NULL;
-
-	public function getFramedContent() : string {
-		if (is_null($this->_framed)) {
-			$this->_framed = self::frame($this->content, $this->type, false);
+	public function getFramedMessage(\Gpws\Interfaces\Message $message) : string {
+		if (!isset($message->_framed)) {
+			$message->_framed = self::frame($message->getContent(), $message->getType(), false);
 		}
 
-		return $this->_framed;
+		return $message->_framed;
 	}
 
 
 	protected static function frame($messagePayload, $messageType = 'text', $messageContinues = false) {
+		$bytes = array();
+
 		switch ($messageType) {
-			case 'continuous': $bytes[1] = 0;
+			case \Gpws\Interfaces\Message::TYPE_TEXT:
+				$bytes[1] = ($messageContinues) ? 0 : 1;
 				break;
-			case 'text': $bytes[1] = ($messageContinues) ? 0 : 1;
+			case \Gpws\Interfaces\Message::TYPE_BINARY:
+				$bytes[1] = ($messageContinues) ? 0 : 2;
 				break;
-			case 'binary': $bytes[1] = ($messageContinues) ? 0 : 2;
+			case \Gpws\Interfaces\Message::TYPE_CLOSE:
+				$bytes[1] = 8;
 				break;
-			case 'close': $bytes[1] = 8;
+			case \Gpws\Interfaces\Message::TYPE_PING:
+				$bytes[1] = 9;
 				break;
-			case 'ping': $bytes[1] = 9;
-				break;
-			case 'pong': $bytes[1] = 10;
+			case \Gpws\Interfaces\Message::TYPE_PONG:
+				$bytes[1] = 10;
 				break;
 		}
 

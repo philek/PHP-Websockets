@@ -16,6 +16,13 @@ class ClientSocket extends \Gpws\Core\Socket {
 
 	private $_write_buffer = array();
 
+	public function __construct($socket) {
+		parent::__construct($socket);
+
+		$this->_messageBuilder = new MessageBuilder;
+		$this->_messageFramer = new MessageFramer;
+	}
+
 	public function read() {
 		if ($this->_closing) {
 trigger_error('This should not happen?');
@@ -55,7 +62,6 @@ if (!defined('NOOUTPUT')) printf('[Network] Read %d bytes%s', $numBytes, PHP_EOL
 	}
 
 	private $_partialFrame = NULL;
-	private $_partialMessage = NULL;
 
 	private function parseBuffer() {
 		if (!$this->_handshakeComplete) {
@@ -102,40 +108,36 @@ if (!defined('NOOUTPUT')) printf('[ReadLoop] Proper Frame Parsed%s', PHP_EOL);
 
 
 	private function handleFrame(\Gpws\Interfaces\Frame $frame) {
-		switch ($frame->getType()) {
-			case 0:
-			case 1:
-			case 2:
-				if ($this->_partialMessage === NULL) {
-					$this->_partialMessage = new \Gpws\Message\InboundMessage;
-				}
+		if (!$this->_messageBuilder->addFrame($frame)) {
+if (!defined('NOOUTPUT')) printf('[ReadLoop] Frame Rejected. Closing.%s', PHP_EOL);		
+			$this->close(false);
 
-				if (!$this->_partialMessage->addFrame($frame)) {
-					$this->close(false);
+			return false;
+		}
 
-					return;
-				}
+		if (!$this->_messageBuilder->isReady()) {
+			return;
+		}
 
-				if ($this->_partialMessage->isReady()) {
-if (!defined('NOOUTPUT')) printf('[ReadLoop] Proper Message Parsed%s', PHP_EOL);
+		$msg = $this->_messageBuilder->getMessage();
 
-					$this->raise('onRead', $this->_partialMessage);
-
-					$this->_partialMessage = NULL;
-				}
-				break;
-
-			case 8:
-				$this->close();
+		switch ($msg->getType()) {
+			case \Gpws\Interfaces\Message::TYPE_TEXT:
+			case \Gpws\Interfaces\Message::TYPE_BINARY:
+				$this->raise('onRead', $msg);
 				return;
 
-			case 9:
-				$message = new \Gpws\Message\PongMessage($frame->getPayload());
+			case \Gpws\Interfaces\Message::TYPE_CLOSE:
+				$this->close(true);
+				return;
+
+			case \Gpws\Interfaces\Message::TYPE_PONG:
+				return;
+
+			case \Gpws\Interfaces\Message::TYPE_PING:
+				$message = new \Gpws\Message\PongMessage($msg->getContent());
 				$this->sendMessage($message);
 				return;
-
-			case 10:
-				// NOOP
 		}
 	}
 
@@ -368,8 +370,8 @@ if (!defined('NOOUTPUT')) printf('[Network] Write Socket error: ' . socket_strer
 		return ((!$this->_closing) ? self::SOCKET_READ : 0) | ($this->_write_buffer ? self::SOCKET_WRITE : 0);
 	}
 
-	public function sendMessage(\Gpws\Interfaces\OutboundMessage $message) {
-		$frame = $message->getFramedContent();
+	public function sendMessage(\Gpws\Interfaces\Message $message) {
+		$frame = $this->_messageFramer->getFramedMessage($message);
 		$this->sendRaw($frame);
 	}
 
@@ -390,7 +392,6 @@ assert(strlen($buffer) > 0);
 
 	private function close($send_message = true) {
 		$this->_partialFrame = NULL;
-		$this->_partialMessage = NULL;
 
 		$this->_read_buffer = NULL;
 
@@ -429,7 +430,6 @@ if (!defined('NOOUTPUT')) printf('[Network] CLOSE FINISHED.'.PHP_EOL);
 		$this->_socket = NULL;
 
 		$this->_partialFrame = NULL;
-		$this->_partialMessage = NULL;
 
 		$this->_read_buffer = NULL;
 		$this->_write_buffer = NULL;

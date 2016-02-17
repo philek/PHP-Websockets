@@ -48,7 +48,7 @@ class Application implements \Gpws\Interfaces\Application {
 
 
 	}
-	public function onMessage(\Gpws\Interfaces\Client $client, \Gpws\Interfaces\InboundMessage $message) {
+	public function onMessage(\Gpws\Interfaces\Client $client, \Gpws\Interfaces\Message $message) {
 
 
 	}
