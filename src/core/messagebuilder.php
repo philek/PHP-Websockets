@@ -2,7 +2,8 @@
 
 namespace Gpws\Core;
 
-class MessageBuilder {
+class MessageBuilder implements \Gpws\Interfaces\EventEmitter {
+	use \Gpws\Core\EventEmitter;
 
 	private $_messageQueue = array();
 
@@ -14,11 +15,67 @@ class MessageBuilder {
 		return array_shift($this->_messageQueue);
 	}
 
+// DEBUG ONLY
+public static $counter = 0;
+	public function __construct() {
+++self::$counter;
+	}
 
-	public function addFrame(\Gpws\Interfaces\Frame $frame) : bool {
+	public function __destruct() {
+--self::$counter;
+	}
+// DEBUG ONLY
+
+
+	private $_frameData = '';
+	private $_partialFrame = NULL;
+
+	public function addData(string $data) {
+		$this->_frameData .= $data;
+
+		while ($this->_frameData) {
+if (!defined('NOOUTPUT')) printf('[ReadLoop] Loop%s', PHP_EOL);
+
+			if ($this->_partialFrame === NULL) {
+				$this->_partialFrame = new \Gpws\Core\Frame;
+			}
+
+			$numBytes = $this->_partialFrame->addData($this->_frameData);
+
+			if ($numBytes === 0) {
+				break; // Not enough data to do anything.
+			}
+
+			if ($this->_partialFrame->isInvalid()) {
+if (!defined('NOOUTPUT')) printf('[ReadLoop] Invalid Frame. Must Close. %s', PHP_EOL);
+
+				$this->raise('onError');
+
+				break;
+			}
+
+			assert($numBytes > 0);
+
+			$this->_frameData = substr($this->_frameData, $numBytes);
+
+			if ($this->_partialFrame->isReady()) {
+if (!defined('NOOUTPUT')) printf('[ReadLoop] Proper Frame Parsed%s', PHP_EOL);
+
+				$this->addFrame($this->_partialFrame);
+
+				$this->_partialFrame = NULL;
+			}
+		}
+	}
+
+
+	private function addFrame(\Gpws\Interfaces\Frame $frame) {
 
 		if ($frame->_header['rsv1'] + $frame->_header['rsv2'] + $frame->_header['rsv3'] > 0) {
 if (!defined('NOOUTPUT')) printf('[BuildMessage] Unsupported RSV Bits.%s', PHP_EOL);
+
+			$this->raise('onError');
+
 			return false;
 		}
 
@@ -34,7 +91,8 @@ if (!defined('NOOUTPUT')) printf('[BuildMessage] Unsupported RSV Bits.%s', PHP_E
 				return $this->addControlFrame($frame);
 
 			default:
-				return false;
+				$this->raise('onError');
+				return;
 		}
 	}
 
@@ -51,12 +109,14 @@ if (!defined('NOOUTPUT')) printf("[BuildMessage] Fragmented Frame Received.%s", 
 			if (!$this->_started) {
 if (!defined('NOOUTPUT')) printf("[BuildMessage] Fragmented Frame with nothing to continue. Aborting.%s", PHP_EOL);
 
-				return false;
+				$this->raise('onError');
+				return;
 			}
 		} else {
 			if ($this->_started) {
 if (!defined('NOOUTPUT')) printf("[BuildMessage] Expecting continuation packet. Aborting.%s", PHP_EOL);
-				return false;
+				$this->raise('onError');
+				return;
 			}
 
 			$this->_started = true;
@@ -70,7 +130,8 @@ if (!defined('NOOUTPUT')) printf("[BuildMessage] Expecting continuation packet. 
 			if ($this->_type === 1) {
 				if (!self::isValidUTF8($this->_data)) {
 	if (!defined('NOOUTPUT')) printf('[BuildMessage] Invalid UTF8 received %s. Aborting connection.%s', $this->_data, PHP_EOL);
-					return false;
+					$this->raise('onError');
+					return;
 				}
 
 				$msg = new \Gpws\Message\TextMessage($this->_data);
@@ -79,6 +140,7 @@ if (!defined('NOOUTPUT')) printf("[BuildMessage] Expecting continuation packet. 
 			}
 
 			$this->_messageQueue[] = $msg;
+			$this->raise('onMessageReady');
 
 			$this->_started = false;
 			$this->_data = NULL;
@@ -111,8 +173,7 @@ if (!defined('NOOUTPUT')) printf('[BuildMessage] Control Messages arent fragment
 		$msg = new $type($frame->getPayload());
 
 		$this->_messageQueue[] = $msg;
-
-		return true;
+		$this->raise('onMessageReady');
 	}
 
 

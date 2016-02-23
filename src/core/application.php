@@ -9,7 +9,7 @@ class Application implements \Gpws\Interfaces\Application {
 	private $headerOriginRequired = false;
 	private $headerProtocolRequired = false;
 
-	public function acceptClient(array $request, array &$response) : bool {
+	public function acceptClient($genericclient, array $request, array &$response) : bool {
 		if (($this->headerOriginRequired && !isset($headers['origin']) ) || ($this->headerOriginRequired && !$this->checkOrigin($headers['origin']))) {
 			$response['StatusLine'] = "HTTP/1.1 403 Forbidden";
 			$response['error'] = true;
@@ -30,31 +30,28 @@ class Application implements \Gpws\Interfaces\Application {
 
 */
 
-		return true;
-
-	}
-
-	public function createClient(\Gpws\Interfaces\Socket $socket) : \Gpws\Interfaces\Client {
-		$cObj = new Client($socket);
+		$cObj = new Client($genericclient->getSocket());
 
 		$cObj->addListener('onConnect', array($this, 'onConnect'));
 		$cObj->addListener('onMessage', array($this, 'onMessage'));
 		$cObj->addListener('onDisconnect', array($this, 'onDisconnect'));
 
-		return $cObj;
+		return true;
 	}
 
 	public function onConnect(\Gpws\Interfaces\Client $client) {
 
 
 	}
+
 	public function onMessage(\Gpws\Interfaces\Client $client, \Gpws\Interfaces\Message $message) {
 
 
 	}
+
 	public function onDisconnect(\Gpws\Interfaces\Client $client) {
-
-
+		$client->removeListener('onConnect', array($this, 'onConnect'));
+		$client->removeListener('onMessage', array($this, 'onMessage'));
+		$client->removeListener('onDisconnect', array($this, 'onDisconnect'));
 	}
-
 }

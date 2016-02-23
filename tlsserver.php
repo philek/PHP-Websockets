@@ -5,7 +5,7 @@ namespace Phpws;
 
 if (in_array('perf', $GLOBALS['argv'])) define('NOOUTPUT', 1);
 
-define('SERVER_NAME', 'ghedipunk/PHP-Websockets-0.0~fr0.2');
+define('SERVER_NAME', 'ghedipunk/PHP-Websockets-0.0~fr0.2tls');
 
 
 require_once(__DIR__ . '/src/bootstrap.php');
@@ -26,9 +26,15 @@ if (!defined('NOOUTPUT')) 		printf('[App] New message (Length: %d Binary == %d)%
 $myApp = new MyApplication();
 
 
-$ws = new \Gpws\Core\Server();
+$ws = new \Gpws\Core\Server(
+	array(
+		'EventLoopClass' => '\Gpws\EventLoop\StreamSelectLoop',
+		'ServerSocketClass' => '\Gpws\Socket\SecureStreamListenSocket',
+		'ClientSocketClass' => '\Gpws\Socket\SecureStreamClientSocket',
+	)
+);
 
-$ws->bind('0.0.0.0', 6100);
+$ws->bind('0.0.0.0', 6110);
 
 $ws->registerApp('/', $myApp);
 

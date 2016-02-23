@@ -1,6 +1,6 @@
 <?php
 
-namespace Gpws\Core;
+namespace Gpws\Socket;
 
 abstract class Socket implements \Gpws\Interfaces\Socket, \Gpws\Interfaces\EventEmitter {
 	use \Gpws\Core\EventEmitter;
@@ -18,4 +18,6 @@ abstract class Socket implements \Gpws\Interfaces\Socket, \Gpws\Interfaces\Event
 	public function getHandle() {
 		return $this->_socket;
 	}
+
+public static $opencounter = 0; // DEBUGONLY
 }

@@ -1,90 +1,157 @@
-<html><head><title>WebSocket</title>
-<style type="text/css">
-html,body {
-	font:normal 0.9em arial,helvetica;
-}
-#log {
-	width:600px; 
-	height:300px; 
-	border:1px solid #7F9DB9; 
-	overflow:auto;
-}
-#msg {
-	width:400px;
-}
-</style>
-<script type="text/javascript">
-var ws;
+<html>
+<head>
+	<title>WebSocket</title>
+
+	<style type="text/css">
+		html,body {
+			font:normal 0.9em arial,helvetica;
+		}
+		.log {
+			width:600px; 
+			height:300px; 
+			border:1px solid #7F9DB9; 
+			overflow:auto;
+		}
+		.msg {
+			width:400px;
+		}
+	</style>
+
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.0/jquery.min.js"></script>
+
+	<script type="text/javascript">
+		(function($) {
+
+			function WSTest(_options) {
+				this.options = $.extend({}, this.defaults, _options);
+
+				this.element = $(this.options.element);
+
+				this.log = this.element.find('.log');
+				this.msg = this.element.find('.msg');
+				this.addr = this.element.data('addr');
+
+				var self = this;
+				this.element.find('.send').click(function() { self._send(); });
+				this.element.find('.connect').click(function() { self._connect(); });
+				this.element.find('.quit').click(function() { self._quit(); });
+			
+			}
+
+			WSTest.prototype = {
+				defaults : {},
+
+				ws : undefined,
+
+				_log : function(string) {
+					this.log[0].innerHTML += string + '<br />';
+				},
+
+				_connect : function() {
+					if (this.ws !== undefined) {
+						this._log('Already connected.');
+						return;
+					}
 
 
-function init() {
-	var host = "ws://127.0.0.1:6100/"; // SET THIS TO YOUR SERVER host:port/ressource
-	try {
-		ws = new WebSocket(host); // (host,protocol) protocol placed in order of priority
-		log('WebSocket - status '+ws.readyState);
-		ws.onopen    = function(msg) {
-			log("Welcome - status "+this.readyState);
-		};
-		ws.onmessage = function(msg) {
-			log("Received: "+msg.data); 
-		};
-		ws.onerror   = function(msg) {
-		        console.log(msg); //helpfull for debugging
-		};
-		ws.onclose   = function(msg) { 
-			console.log(msg);
-			log("Disconnected - status "+this.readyState); 
-		};
-	}
-	catch(ex){ 
-		log(ex); 
-	}
-	$("msg").focus();
-}
+					try {
+						var self = this;
 
-function send(){
-	var txt,msg;
-	txt = $("msg");
-	msg = txt.value;
-	if(!msg) { 
-		alert("Message can not be empty"); 
-		return; 
-	}
-	txt.value="";
-	txt.focus();
-	try { 
-		ws.send(msg); 
-		log('Sent: '+msg); 
-	} catch(ex) { 
-		log(ex); 
-	}
-}
-function quit(){
-	if (ws != null) {
-		log("Goodbye!");
-		ws.close();
-		ws=null;
-	}
-}
+						this.ws = new WebSocket(this.addr); // (host,protocol) protocol placed in order of priority
+						self._log('WebSocket - status '+this.ws.readyState);
 
-function reconnect() {
-	quit();
-	init();
-}
+						this.ws.onopen = function(msg) {
+							self._log("Welcome - status "+this.readyState);
+						};
 
-// Utilities
-function $(id){ return document.getElementById(id); }
-function log(msg){ $("log").innerHTML+="<br>"+msg; }
-function onkey(event){ if(event.keyCode==13){ send(); } }
+						this.ws.onmessage = function(msg) {
+							self._log("Received: "+msg.data); 
+						};
+
+						this.ws.onerror = function(msg) {
+							console.log(msg);
+
+							self._log('Error: ' + msg.reason);
+						};
+
+						this.ws.onclose = function(msg) { 
+							console.log(msg);
+
+							self._log("Disconnected - status "+this.readyState); 
+						};
+					} catch(ex) { 
+						this._log('ExError: ' + ex); 
+					}
+
+					this.msg[0].focus();
+				},
+
+				_send : function(){
+					var txt = this.msg.val();
+
+					if (!txt) { 
+						this._log("Message can not be empty"); 
+						return; 
+					}
+
+					this.msg.val('');
+					this.msg.focus();
+
+					try { 
+						this.ws.send(txt); 
+						this._log('Sent: ' + txt); 
+					} catch (ex) { 
+						this._log('ExError: ' + ex); 
+					}
+				},
+
+				_quit : function() {
+					if (this.ws === undefined) {
+						this._log('Not Open');
+						return;
+					}
+
+					this._log("Goodbye!");
+
+					this.ws.close();
+					this.ws = undefined;
+				}
+			};
+
+			window['WSTest'] = WSTest;
+		})(jQuery);
+	</script>
+</head>
+<body>
+
+<h3>WebSocket v2.00</h3>
+
+<div id="unsecure" data-addr="ws://127.0.0.1:6100/">
+	<h4>unsecure: ws://127.0.0.1:6100/</h4>
+	<div class="log"></div>
+	<input class="msg" type="textbox" />
+	<button class="send">Send</button>
+	<button class="connect">Connect</button>
+	<button class="quit">Quit</button>
+</div>
+
+<div id="secure" data-addr="wss://127.0.0.1:6110/">
+	<h4>secure: wss://127.0.0.1:6110/</h4>
+	<div class="log"></div>
+	<input class="msg" type="textbox" />
+	<button class="send">Send</button>
+	<button class="connect">Connect</button>
+	<button class="quit">Quit</button>
+</div>
+
+<script>
+(function($) {
+	new window['WSTest']({'element' : '#unsecure'});
+	new window['WSTest']({'element' : '#secure'});
+})(jQuery);
 </script>
 
-</head>
-<body onload="init()">
-<h3>WebSocket v2.00</h3>
-<div id="log"></div>
-<input id="msg" type="textbox" onkeypress="onkey(event)"/>
-<button onclick="send()">Send</button>
-<button onclick="quit()">Quit</button>
-<button onclick="reconnect()">Reconnect</button>
+
 </body>
+
 </html>

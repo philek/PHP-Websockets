@@ -9,8 +9,8 @@ interface Socket {
 	public function getId() : int;
 	public function getHandle();
 
-	public function read();
-	public function write();
+	public function doRead();
+	public function doWrite();
 
 	public function getState() : int;
 }

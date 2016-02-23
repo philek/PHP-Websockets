@@ -2,7 +2,7 @@
 namespace Gpws\Eventloop;
 
 // Default method 
-class SelectLoop implements \Gpws\Interfaces\EventLoop {
+class StreamSelectLoop implements \Gpws\Interfaces\EventLoop {
 
 public static $socketcount = 0; // DEBUGONLY
 
@@ -15,7 +15,7 @@ if (!defined('NOOUTPUT')) printf('[EventLoop] Loop.%s', PHP_EOL);
 			$write = $this->_write_sockets;
 			$except = null;
 // usleep(1000000);
-			socket_select($read, $write, $except, $this->_nextTimer);
+			stream_select($read, $write, $except, $this->_nextTimer);
 
 			foreach ($write as $socket) {
 				$this->_socketList[(int)$socket]->doWrite();

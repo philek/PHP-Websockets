@@ -53,4 +53,13 @@ trait EventEmitter {
 
 		return $this;
 	}
+
+	public function clearListeners() {
+		$this->_events = array();
+	}
+
+	public function hasListeners() {
+		$c = 0; foreach ($this->_events AS $ev=>$list) $c += count($list);
+		return $c;
+	}
 }
