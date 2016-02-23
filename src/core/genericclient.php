@@ -115,16 +115,23 @@ if (!defined('NOOUTPUT')) printf('[ReadLoop] New Client: %s%s', str_replace("\r\
 		//$clientHeaders['sec-websocket-extensions']='';
 		foreach ($lines as $line) {
 			if (strpos($line,":") !== false) {
-				$header = explode(":",$line,2);
-				switch ($header) {
+				list($name, $value) = explode(":",$line,2);
+				$name = strtolower(trim($name));
+
+				switch ($name) {
 					case 'sec-websocket-protocol':
-						$clientHeaders[strtolower(trim($header[0]))] .= trim($header[1]).', ';
-						break;
 					case 'sec-websocket-extensions':
-						$clientHeaders[strtolower(trim($header[0]))] .= trim($header[1]).'; ';
+						$list = explode(',', $value);
+						foreach ($list AS $item) {
+							$clientHeaders[$name][] = trim($item);
+						}
 						break;
+
 					default:
-						$clientHeaders[strtolower(trim($header[0]))] = trim($header[1]);
+						if (isset($clientHeaders[$name])) {
+							trigger_error(sprintf('Duplicate header: %s', $name), E_USER_WARNING);
+						}
+						$clientHeaders[$name] = trim($value);
 						break;
 				}
 			}
