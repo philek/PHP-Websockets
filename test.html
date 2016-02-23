@@ -43,8 +43,10 @@
 
 				ws : undefined,
 
-				_log : function(string) {
-					this.log[0].innerHTML += string + '<br />';
+				_log : function() {
+					var args = Array.prototype.slice.call(arguments);
+
+					this.log[0].innerHTML += args.join(" ") + '<br />';
 				},
 
 				_connect : function() {
@@ -75,9 +77,10 @@
 						};
 
 						this.ws.onclose = function(msg) { 
-							console.log(msg);
+							console.log(this, msg);
 
-							self._log("Disconnected - status "+this.readyState); 
+							self._log("Disconnected.", "Status: ", this.readyState, "Clean: ", msg.wasClean, "Code: ", msg.code, "Reason: ", msg.reason); 
+							self.ws = undefined;
 						};
 					} catch(ex) { 
 						this._log('ExError: ' + ex); 
