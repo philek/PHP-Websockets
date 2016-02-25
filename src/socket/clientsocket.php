@@ -96,6 +96,10 @@ if (!defined('NOOUTPUT')) printf("[Network] Sending %d bytes %s", strlen($buffer
 		unset($buffer); // Free ASAP just because we can.
 
 // TODO Handle Errors.
+		if ($numBytes == 0) {
+			$this->abort();
+			return;
+		}
 
 
 		if ($numBytes > 0) {
